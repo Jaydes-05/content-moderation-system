@@ -3,7 +3,7 @@
  * Handles API calls, state management, and message routing
  */
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://3.107.24.140:8000';
 const TRANSLATE_API = 'https://api.mymemory.translated.net/get';
 const BATCH_SIZE = 50; // max comments per batch request
 
