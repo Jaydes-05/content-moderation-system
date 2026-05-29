@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "ContentGuard — AI Moderation",
+  "short_name": "ContentGuard",
+  "description": "AI-powered content moderation for Twitter, Reddit, Instagram & more. Analyze toxicity, translate comments, and block bad actors.",
+  "version": "1.0.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "ContentGuard — AI Moderation"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://twitter.com/*",
+        "https://x.com/*",
+        "https://www.reddit.com/*",
+        "https://www.instagram.com/*",
+        "https://www.youtube.com/*",
+        "https://www.facebook.com/*",
+        "https://news.ycombinator.com/*",
+        "https://www.linkedin.com/*",
+        "https://*/*"
+      ],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://api.mymemory.translated.net/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*.png", "panel.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

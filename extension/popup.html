@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContentGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --violet: #7C3AED;
+      --violet-light: #A78BFA;
+      --cyan: #06B6D4;
+      --green: #10B981;
+      --red: #EF4444;
+      --orange: #F97316;
+      --yellow: #F59E0B;
+      --bg: #0D0D1A;
+      --bg-card: rgba(255,255,255,0.05);
+      --border: rgba(255,255,255,0.09);
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+    }
+
+    body {
+      width: 360px;
+      min-height: 480px;
+      background: var(--bg);
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.3), rgba(6, 182, 212, 0.12));
+      border-bottom: 1px solid var(--border);
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: relative;
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,58,237,0.1) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--violet), var(--cyan));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 16px rgba(124,58,237,0.4);
+    }
+
+    .logo svg {
+      width: 24px;
+      height: 24px;
+      color: #fff;
+    }
+
+    .header-text h1 {
+      font-size: 17px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, var(--violet-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+
+    .header-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Backend status */
+    .status-bar {
+      padding: 10px 20px;
+      background: rgba(0,0,0,0.3);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+    .status-dot.offline { background: var(--red); }
+    .status-dot.checking { background: var(--yellow); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      font-size: 12px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .status-hint {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    /* Main content */
+    .main {
+      padding: 20px;
+    }
+
+    /* Current page card */
+    .page-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .page-card__label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .page-card__url {
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .page-card__platform {
+      font-size: 11px;
+      color: var(--violet-light);
+      font-weight: 600;
+    }
+
+    /* Open panel button */
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--violet), #5B21B6);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 6px 24px rgba(124,58,237,0.35);
+      margin-bottom: 12px;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 30px rgba(124,58,237,0.5);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-primary svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Stats mini */
+    .stats-mini {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .stat-mini-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+
+    .stat-mini-value {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+
+    .stat-mini-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-mini-card.total .stat-mini-value { color: #67E8F9; }
+    .stat-mini-card.toxic .stat-mini-value { color: var(--red); }
+    .stat-mini-card.safe .stat-mini-value { color: var(--green); }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0;
+    }
+
+    /* Instructions */
+    .instructions {
+      background: rgba(124, 58, 237, 0.08);
+      border: 1px solid rgba(124, 58, 237, 0.2);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .instructions__title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--violet-light);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 10px;
+    }
+
+    .step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .step:last-child { margin-bottom: 0; }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--violet);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      padding-top: 2px;
+    }
+
+    code {
+      background: rgba(255,255,255,0.07);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #67E8F9;
+    }
+
+    /* Footer */
+    .footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-brand {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .footer-version {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 8px;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* No stats placeholder */
+    .no-stats {
+      text-align: center;
+      padding: 8px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-4-4 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z" fill="currentColor"/>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>ContentGuard</h1>
+      <p>AI-powered content moderation</p>
+    </div>
+  </div>
+
+  <!-- Backend status bar -->
+  <div class="status-bar">
+    <div class="status-dot checking" id="status-dot"></div>
+    <div class="status-text" id="status-text">Checking backend...</div>
+    <div class="status-hint" id="status-hint"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Current page -->
+    <div class="page-card">
+      <div class="page-card__label">Current Page</div>
+      <div class="page-card__url" id="page-url">Loading...</div>
+      <div class="page-card__platform" id="page-platform"></div>
+    </div>
+
+    <!-- Open panel button -->
+    <button class="btn-primary" id="open-panel-btn">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Open Analysis Panel
+    </button>
+
+    <!-- Mini stats (shown after analysis) -->
+    <div id="mini-stats-section" style="display:none">
+      <div class="stats-mini">
+        <div class="stat-mini-card total">
+          <div class="stat-mini-value" id="s-total">—</div>
+          <div class="stat-mini-label">Total</div>
+        </div>
+        <div class="stat-mini-card toxic">
+          <div class="stat-mini-value" id="s-toxic">—</div>
+          <div class="stat-mini-label">Toxic %</div>
+        </div>
+        <div class="stat-mini-card safe">
+          <div class="stat-mini-value" id="s-safe">—</div>
+          <div class="stat-mini-label">Safe %</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <div class="instructions__title">How to use</div>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">Start the backend: <code>uvicorn api.main:app --reload</code></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">Visit any social platform and scroll to the comments section</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">Click <strong>Open Analysis Panel</strong> or the floating <strong>ContentGuard</strong> button on the page</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text">Click any comment's <strong>🌐 Translate</strong> button to translate it</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-brand">ContentGuard AI</div>
+    <div class="footer-version">v1.0.0</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
