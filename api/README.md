@@ -2,6 +2,8 @@
 
 Production-ready FastAPI backend for AI-based content moderation.
 
+> **⚠️ Note**: The API automatically runs in **DEMO MODE** when ML model files are not available. Demo mode uses keyword-based detection and provides realistic mock predictions - perfect for testing without ML dependencies.
+
 ## Features
 
 - **Toxicity Detection**: Detect toxic, insulting, threatening, and hateful content

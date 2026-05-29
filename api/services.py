@@ -9,10 +9,18 @@ import logging
 from typing import Dict, List
 from pathlib import Path
 
-from src.inference.bert_predict import BERTToxicityPredictor
-from src.moderation import ContentModerator
-
 logger = logging.getLogger(__name__)
+
+# Note: BERT model classes are optional - API runs in demo mode if not available
+try:
+    from src.inference.bert_predict import BERTToxicityPredictor
+    from src.moderation import ContentModerator
+    MODELS_AVAILABLE = True
+except ImportError:
+    logger.warning("Model modules not found - API will run in DEMO MODE")
+    BERTToxicityPredictor = None
+    ContentModerator = None
+    MODELS_AVAILABLE = False
 
 
 class ModelService:
@@ -50,6 +58,14 @@ class ModelService:
         """
         try:
             logger.info("Loading models...")
+            
+            # Check if model classes are available
+            if not MODELS_AVAILABLE:
+                logger.warning("Model modules not available")
+                logger.warning("Enabling DEMO MODE with mock predictions")
+                self._demo_mode = True
+                self._is_loaded = True
+                return
             
             # Check if model exists
             if not Path(model_dir).exists():
