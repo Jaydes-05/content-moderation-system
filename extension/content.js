@@ -36,28 +36,49 @@
       icon: '𝕏',
       detect: () => /twitter\.com|x\.com/.test(location.hostname),
       scrapeComments: scrapeTwitter,
-      commentSelector: '[data-testid="tweet"]',
+      commentSelector: '[data-testid="tweet"], article[role="article"], div[lang]',
+    },
+    facebook: {
+      name: 'Facebook',
+      icon: '👥',
+      detect: () => /facebook\.com/.test(location.hostname),
+      scrapeComments: scrapeFacebook,
+      commentSelector: '[role="article"], div[dir="auto"]',
+    },
+    linkedin: {
+      name: 'LinkedIn',
+      icon: '💼',
+      detect: () => /linkedin\.com/.test(location.hostname),
+      scrapeComments: scrapeLinkedIn,
+      commentSelector: '.comments-comment-item, .comment-item',
+    },
+    tiktok: {
+      name: 'TikTok',
+      icon: '🎵',
+      detect: () => /tiktok\.com/.test(location.hostname),
+      scrapeComments: scrapeTikTok,
+      commentSelector: '[data-e2e="comment-item"], .comment-item',
     },
     reddit: {
       name: 'Reddit',
       icon: '🤖',
       detect: () => /reddit\.com/.test(location.hostname),
       scrapeComments: scrapeReddit,
-      commentSelector: '[data-testid="comment"], .Comment',
+      commentSelector: '[data-testid="comment"], .Comment, p',
     },
     instagram: {
       name: 'Instagram',
       icon: '📸',
       detect: () => /instagram\.com/.test(location.hostname),
       scrapeComments: scrapeInstagram,
-      commentSelector: '._a9zs, ._a9ym',
+      commentSelector: '._a9zs, ._a9ym, span[class*="comment"]',
     },
     youtube: {
       name: 'YouTube',
       icon: '▶️',
       detect: () => /youtube\.com/.test(location.hostname),
       scrapeComments: scrapeYouTube,
-      commentSelector: 'ytd-comment-renderer',
+      commentSelector: 'ytd-comment-renderer, #content-text',
     },
     hackernews: {
       name: 'Hacker News',
@@ -71,7 +92,7 @@
       icon: '🌐',
       detect: () => true,
       scrapeComments: scrapeGeneric,
-      commentSelector: '[class*="comment"], article p',
+      commentSelector: '[class*="comment"], article p, [role="article"]',
     },
   };
 
@@ -2419,19 +2440,291 @@
 
   function scrapeTwitter() {
     const results = [];
-    document.querySelectorAll('[data-testid="tweet"]').forEach((tweet, i) => {
-      const textEl = tweet.querySelector('[data-testid="tweetText"]');
-      const authorEl = tweet.querySelector('[data-testid="User-Name"] span');
-      if (textEl) {
+    console.log('[ContentGuard] Scraping Twitter/X comments...');
+    
+    // Strategy 1: Look for tweets and replies with multiple selectors
+    const tweetSelectors = [
+      '[data-testid="tweet"]',
+      '[data-testid="tweetText"]',
+      'article[role="article"]',
+      '[data-testid="cellInnerDiv"]'
+    ];
+    
+    const processedTexts = new Set(); // Avoid duplicates
+    
+    // Try each selector strategy
+    for (const selector of tweetSelectors) {
+      const elements = document.querySelectorAll(selector);
+      console.log(`[ContentGuard] Found ${elements.length} elements with selector: ${selector}`);
+      
+      elements.forEach((element, i) => {
+        // Look for text content in multiple ways
+        let textEl = element.querySelector('[data-testid="tweetText"]');
+        if (!textEl) {
+          textEl = element.querySelector('[lang]'); // Twitter uses lang attribute on text
+        }
+        if (!textEl && element.hasAttribute('lang')) {
+          textEl = element; // The element itself might be the text container
+        }
+        if (!textEl) {
+          // Look for any div with substantial text content
+          const divs = element.querySelectorAll('div[dir="auto"]');
+          for (const div of divs) {
+            const text = div.innerText?.trim();
+            if (text && text.length > 10 && text.length < 5000) {
+              textEl = div;
+              break;
+            }
+          }
+        }
+        
+        if (!textEl) return;
+        
+        const text = textEl.innerText?.trim();
+        if (!text || text.length < 2 || text.length > 5000) return;
+        
+        // Skip if we've already processed this text
+        if (processedTexts.has(text)) return;
+        processedTexts.add(text);
+        
+        // Find author - try multiple strategies
+        let author = 'Unknown';
+        let authorEl = element.querySelector('[data-testid="User-Name"]');
+        
+        if (authorEl) {
+          // Get the first span which usually contains the display name
+          const spans = authorEl.querySelectorAll('span');
+          for (const span of spans) {
+            const name = span.innerText?.trim();
+            if (name && name.length > 0 && name.length < 50 && !name.startsWith('@')) {
+              author = name;
+              break;
+            }
+          }
+        }
+        
+        // Alternative: look for username with @
+        if (author === 'Unknown') {
+          const usernameEl = element.querySelector('a[href*="/"]');
+          if (usernameEl) {
+            const href = usernameEl.getAttribute('href');
+            const match = href?.match(/\/([^\/]+)$/);
+            if (match && match[1] && !match[1].includes('status')) {
+              author = '@' + match[1];
+            }
+          }
+        }
+        
+        // Alternative: look for any link that looks like a username
+        if (author === 'Unknown') {
+          const links = element.querySelectorAll('a');
+          for (const link of links) {
+            const linkText = link.innerText?.trim();
+            if (linkText && linkText.startsWith('@') && linkText.length < 30) {
+              author = linkText;
+              break;
+            }
+          }
+        }
+        
         results.push({
-          id: `tw-${i}`,
-          text: textEl.innerText.trim(),
-          author: authorEl?.innerText?.trim() || 'Unknown',
+          id: `tw-${results.length}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
+      });
+      
+      // If we found comments with this selector, we're done
+      if (results.length > 0) break;
+    }
+    
+    // Fallback: Look for any text that looks like a tweet/comment
+    if (results.length === 0) {
+      console.log('[ContentGuard] Using fallback strategy for Twitter...');
+      const allDivs = document.querySelectorAll('div[lang], div[dir="auto"]');
+      
+      allDivs.forEach((div, i) => {
+        const text = div.innerText?.trim();
+        if (!text || text.length < 10 || text.length > 5000) return;
+        if (processedTexts.has(text)) return;
+        
+        // Skip UI elements
+        const uiKeywords = ['Retweet', 'Like', 'Reply', 'Share', 'Follow', 'Home', 'Explore', 'Notifications'];
+        if (uiKeywords.some(keyword => text === keyword || text.startsWith(keyword))) return;
+        
+        processedTexts.add(text);
+        
+        // Try to find author nearby
+        let author = 'Unknown';
+        let parent = div.parentElement;
+        for (let depth = 0; depth < 10 && parent; depth++) {
+          const authorLink = parent.querySelector('a[href*="/"]');
+          if (authorLink) {
+            const href = authorLink.getAttribute('href');
+            const match = href?.match(/\/([^\/]+)$/);
+            if (match && match[1] && !match[1].includes('status') && !match[1].includes('photo')) {
+              author = '@' + match[1];
+              break;
+            }
+          }
+          parent = parent.parentElement;
+        }
+        
+        results.push({
+          id: `tw-fb-${i}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
+      });
+    }
+    
+    console.log(`[ContentGuard] Scraped ${results.length} Twitter/X comments`);
+    if (results.length > 0) {
+      console.log('[ContentGuard] Sample:', results.slice(0, 2).map(c => `${c.author}: ${c.text.substring(0, 40)}...`));
+    }
+    
+    return results.slice(0, 200); // Limit to 200 comments
+  }
+
+  function scrapeFacebook() {
+    const results = [];
+    console.log('[ContentGuard] Scraping Facebook comments...');
+    
+    const processedTexts = new Set();
+    
+    // Facebook uses role="article" for posts and comments
+    const articles = document.querySelectorAll('[role="article"]');
+    console.log(`[ContentGuard] Found ${articles.length} Facebook articles`);
+    
+    articles.forEach((article, i) => {
+      // Look for text content
+      const textDivs = article.querySelectorAll('div[dir="auto"]');
+      
+      for (const div of textDivs) {
+        const text = div.innerText?.trim();
+        if (!text || text.length < 5 || text.length > 5000) continue;
+        if (processedTexts.has(text)) continue;
+        
+        // Skip UI elements
+        const uiKeywords = ['Like', 'Comment', 'Share', 'Send', 'See more', 'See less', 'Write a comment'];
+        if (uiKeywords.some(keyword => text === keyword || text.startsWith(keyword))) continue;
+        
+        processedTexts.add(text);
+        
+        // Find author
+        let author = 'Unknown';
+        const authorLink = article.querySelector('a[role="link"]');
+        if (authorLink) {
+          author = authorLink.innerText?.trim() || authorLink.getAttribute('aria-label') || 'Unknown';
+        }
+        
+        results.push({
+          id: `fb-${results.length}`,
+          text: text,
+          author: author,
           avatar: null
         });
       }
     });
-    return results;
+    
+    console.log(`[ContentGuard] Scraped ${results.length} Facebook comments`);
+    return results.slice(0, 200);
+  }
+
+  function scrapeLinkedIn() {
+    const results = [];
+    console.log('[ContentGuard] Scraping LinkedIn comments...');
+    
+    const processedTexts = new Set();
+    
+    // LinkedIn comment selectors
+    const commentSelectors = [
+      '.comments-comment-item',
+      '.comment-item',
+      '[data-id*="comment"]',
+      '.feed-shared-update-v2__commentary'
+    ];
+    
+    for (const selector of commentSelectors) {
+      const comments = document.querySelectorAll(selector);
+      console.log(`[ContentGuard] Found ${comments.length} elements with selector: ${selector}`);
+      
+      comments.forEach((comment, i) => {
+        const text = comment.innerText?.trim();
+        if (!text || text.length < 5 || text.length > 5000) return;
+        if (processedTexts.has(text)) return;
+        
+        processedTexts.add(text);
+        
+        // Find author
+        let author = 'Unknown';
+        const authorLink = comment.querySelector('a[href*="/in/"]');
+        if (authorLink) {
+          author = authorLink.innerText?.trim() || 'Unknown';
+        }
+        
+        results.push({
+          id: `li-${results.length}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
+      });
+      
+      if (results.length > 0) break;
+    }
+    
+    console.log(`[ContentGuard] Scraped ${results.length} LinkedIn comments`);
+    return results.slice(0, 200);
+  }
+
+  function scrapeTikTok() {
+    const results = [];
+    console.log('[ContentGuard] Scraping TikTok comments...');
+    
+    const processedTexts = new Set();
+    
+    // TikTok comment selectors
+    const commentSelectors = [
+      '[data-e2e="comment-item"]',
+      '.comment-item',
+      '[class*="CommentItem"]',
+      '[class*="comment-text"]'
+    ];
+    
+    for (const selector of commentSelectors) {
+      const comments = document.querySelectorAll(selector);
+      console.log(`[ContentGuard] Found ${comments.length} elements with selector: ${selector}`);
+      
+      comments.forEach((comment, i) => {
+        const text = comment.innerText?.trim();
+        if (!text || text.length < 2 || text.length > 5000) return;
+        if (processedTexts.has(text)) return;
+        
+        processedTexts.add(text);
+        
+        // Find author
+        let author = 'Unknown';
+        const authorEl = comment.querySelector('[data-e2e="comment-username"], [class*="username"]');
+        if (authorEl) {
+          author = authorEl.innerText?.trim() || 'Unknown';
+        }
+        
+        results.push({
+          id: `tt-${results.length}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
+      });
+      
+      if (results.length > 0) break;
+    }
+    
+    console.log(`[ContentGuard] Scraped ${results.length} TikTok comments`);
+    return results.slice(0, 200);
   }
 
   function scrapeReddit() {
@@ -2548,41 +2841,108 @@
 
   function scrapeInstagram() {
     const results = [];
-    // Instagram comments (class names change frequently)
-    const selectors = ['._a9zs', '._a9ym', 'span[class*="comment"]', 'li span'];
+    console.log('[ContentGuard] Scraping Instagram comments...');
+    
+    const processedTexts = new Set();
+    
+    // Instagram comments (class names change frequently, use multiple strategies)
+    const selectors = [
+      '._a9zs',
+      '._a9ym',
+      'span[class*="comment"]',
+      'li span',
+      '[role="button"] + span',
+      'ul li span'
+    ];
+    
     for (const sel of selectors) {
-      document.querySelectorAll(sel).forEach((el, i) => {
-        const text = el.innerText.trim();
-        if (text.length > 2 && text.length < 2000) {
-          const authorEl = el.closest('li')?.querySelector('a');
-          results.push({
-            id: `ig-${i}`,
-            text,
-            author: authorEl?.innerText?.trim() || 'Unknown',
-            avatar: null
-          });
+      const elements = document.querySelectorAll(sel);
+      console.log(`[ContentGuard] Found ${elements.length} elements with selector: ${sel}`);
+      
+      elements.forEach((el, i) => {
+        const text = el.innerText?.trim();
+        if (!text || text.length < 2 || text.length > 2000) return;
+        if (processedTexts.has(text)) return;
+        
+        // Skip UI elements
+        const uiKeywords = ['Reply', 'Like', 'View replies', 'Load more', 'See translation'];
+        if (uiKeywords.some(keyword => text === keyword || text.startsWith(keyword))) return;
+        
+        processedTexts.add(text);
+        
+        // Find author
+        let author = 'Unknown';
+        const authorEl = el.closest('li')?.querySelector('a') || el.closest('div')?.querySelector('a');
+        if (authorEl) {
+          author = authorEl.innerText?.trim() || authorEl.getAttribute('href')?.split('/')[1] || 'Unknown';
         }
+        
+        results.push({
+          id: `ig-${results.length}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
       });
+      
       if (results.length > 0) break;
     }
-    return results;
+    
+    console.log(`[ContentGuard] Scraped ${results.length} Instagram comments`);
+    return results.slice(0, 200);
   }
 
   function scrapeYouTube() {
     const results = [];
-    document.querySelectorAll('ytd-comment-renderer').forEach((el, i) => {
-      const textEl = el.querySelector('#content-text');
-      const authorEl = el.querySelector('#author-text');
-      if (textEl) {
+    console.log('[ContentGuard] Scraping YouTube comments...');
+    
+    const processedTexts = new Set();
+    
+    // YouTube comment selectors (multiple strategies)
+    const commentSelectors = [
+      'ytd-comment-renderer',
+      'ytd-comment-thread-renderer',
+      '#content-text'
+    ];
+    
+    for (const selector of commentSelectors) {
+      const elements = document.querySelectorAll(selector);
+      console.log(`[ContentGuard] Found ${elements.length} elements with selector: ${selector}`);
+      
+      elements.forEach((el, i) => {
+        let textEl = el.querySelector('#content-text');
+        if (!textEl && selector === '#content-text') {
+          textEl = el;
+        }
+        
+        if (!textEl) return;
+        
+        const text = textEl.innerText?.trim();
+        if (!text || text.length < 2 || text.length > 5000) return;
+        if (processedTexts.has(text)) return;
+        
+        processedTexts.add(text);
+        
+        // Find author
+        let author = 'Unknown';
+        const authorEl = el.querySelector('#author-text, ytd-channel-name a');
+        if (authorEl) {
+          author = authorEl.innerText?.trim() || 'Unknown';
+        }
+        
         results.push({
-          id: `yt-${i}`,
-          text: textEl.innerText.trim(),
-          author: authorEl?.innerText?.trim() || 'Unknown',
+          id: `yt-${results.length}`,
+          text: text,
+          author: author,
           avatar: null
         });
-      }
-    });
-    return results;
+      });
+      
+      if (results.length > 0) break;
+    }
+    
+    console.log(`[ContentGuard] Scraped ${results.length} YouTube comments`);
+    return results.slice(0, 200);
   }
 
   function scrapeHackerNews() {
@@ -2604,19 +2964,63 @@
 
   function scrapeGeneric() {
     const results = [];
+    console.log('[ContentGuard] Using generic scraper...');
+    
+    const processedTexts = new Set();
+    
+    // Generic selectors that work on most sites
     const selectors = [
-      '[class*="comment"]:not([class*="commentcount"]):not([class*="commentbox"])',
+      '[class*="comment"]:not([class*="commentcount"]):not([class*="commentbox"]):not([class*="comment-form"])',
+      '[id*="comment"]',
+      '[role="article"] p',
       'article p',
-      '[role="article"] p'
+      '[data-comment]',
+      '.post-content p',
+      '.entry-content p'
     ];
+    
     for (const sel of selectors) {
-      document.querySelectorAll(sel).forEach((el, i) => {
+      const elements = document.querySelectorAll(sel);
+      console.log(`[ContentGuard] Found ${elements.length} elements with selector: ${sel}`);
+      
+      elements.forEach((el, i) => {
         const text = el.innerText?.trim();
-        if (text && text.length > 10 && text.length < 2000) {
-          results.push({ id: `gen-${i}`, text, author: 'Unknown', avatar: null });
+        if (!text || text.length < 10 || text.length > 2000) return;
+        if (processedTexts.has(text)) return;
+        
+        // Skip navigation and UI text
+        const uiKeywords = ['Home', 'About', 'Contact', 'Login', 'Sign up', 'Menu', 'Search', 'Subscribe'];
+        if (uiKeywords.some(keyword => text === keyword)) return;
+        
+        processedTexts.add(text);
+        
+        // Try to find author
+        let author = 'Unknown';
+        let parent = el.parentElement;
+        for (let depth = 0; depth < 5 && parent; depth++) {
+          const authorEl = parent.querySelector('[class*="author"], [class*="user"], [class*="name"]');
+          if (authorEl && authorEl !== el) {
+            const authorText = authorEl.innerText?.trim();
+            if (authorText && authorText.length < 50) {
+              author = authorText;
+              break;
+            }
+          }
+          parent = parent.parentElement;
         }
+        
+        results.push({
+          id: `gen-${results.length}`,
+          text: text,
+          author: author,
+          avatar: null
+        });
       });
+      
+      if (results.length > 20) break; // Found enough with this selector
     }
+    
+    console.log(`[ContentGuard] Scraped ${results.length} generic comments`);
     return results.slice(0, 100);
   }
 
