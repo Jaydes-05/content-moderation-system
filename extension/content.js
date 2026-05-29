@@ -82,11 +82,14 @@
     platform: null,
     results: null,
     backendOnline: false,
-    activeTab: 'stats', // 'stats' | 'comments' | 'block' | 'analytics' | 'insights'
+    activeTab: 'stats', // 'stats' | 'comments' | 'block' | 'analytics' | 'insights' | 'batch' | 'health'
     selectedLang: 'es',
     translating: {}, // commentId → {loading, translated}
     history: [], // Historical analysis data for trends
     userReputation: new Map(), // username → reputation score
+    batchMode: false, // Batch moderation mode
+    selectedComments: new Set(), // Selected comment IDs for batch operations
+    communityHealth: null, // Community health metrics
     settings: {
       autoHide: false,
       customKeywords: [],
@@ -95,7 +98,8 @@
       toxicityThreshold: 0.5, // Changed from 0.7 to 0.5 for better detection
       showHeatmap: true,
       showReplySuggestions: true,
-      trackHistory: true
+      trackHistory: true,
+      detectSarcasm: true // AI context analysis for sarcasm
     }
   };
 
@@ -207,8 +211,8 @@
             <svg viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-4-4 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z" fill="currentColor"/></svg>
           </div>
           <div>
-            <div class="cg-panel__title">ContentGuard</div>
-            <div class="cg-panel__subtitle" id="cg-platform-label">Ready</div>
+            <div class="cg-panel__title">ContentGuard <span class="cg-ml-tag">ML</span></div>
+            <div class="cg-panel__subtitle" id="cg-platform-label">BERT Model • 92.8% Accuracy</div>
           </div>
         </div>
         <div class="cg-panel__actions">
@@ -218,6 +222,11 @@
           <button class="cg-btn-icon" id="cg-export-btn" title="Export Report">
             <svg viewBox="0 0 24 24" fill="none"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z" fill="currentColor"/></svg>
           </button>
+          <div class="cg-export-menu" id="cg-export-menu" style="display: none;">
+            <button class="cg-export-option" data-format="csv">📊 Export CSV</button>
+            <button class="cg-export-option" data-format="json">📄 Export JSON</button>
+            <button class="cg-export-option" data-format="pdf">📕 Export PDF</button>
+          </div>
           <button class="cg-btn-icon" id="cg-refresh-btn" title="Re-analyze">
             <svg viewBox="0 0 24 24" fill="none"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
           </button>
@@ -233,7 +242,9 @@
           <!-- Tabs -->
           <div class="cg-tabs">
             <button class="cg-tab active" data-tab="stats">📊 Stats</button>
+            <button class="cg-tab" data-tab="health">💚 Health</button>
             <button class="cg-tab" data-tab="comments">💬 Comments</button>
+            <button class="cg-tab" data-tab="batch">📦 Batch</button>
             <button class="cg-tab" data-tab="analytics">📈 Analytics</button>
             <button class="cg-tab" data-tab="insights">🧠 AI Insights</button>
             <button class="cg-tab" data-tab="block">🚫 Block</button>
@@ -262,6 +273,68 @@
             </div>
           </div>
 
+          <!-- Community Health Tab -->
+          <div class="cg-tab-content" id="tab-health">
+            <div class="cg-health-dashboard">
+              <div class="cg-health-score-container">
+                <svg class="cg-health-gauge" viewBox="0 0 200 200" width="200" height="200">
+                  <circle cx="100" cy="100" r="80" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="20"/>
+                  <circle id="cg-health-circle" cx="100" cy="100" r="80" fill="none" stroke="url(#healthGradient)" stroke-width="20" 
+                          stroke-dasharray="502.4" stroke-dashoffset="502.4" stroke-linecap="round" 
+                          transform="rotate(-90 100 100)" style="transition: stroke-dashoffset 1.5s ease;"/>
+                  <defs>
+                    <linearGradient id="healthGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color:#10B981;stop-opacity:1" />
+                      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+                    </linearGradient>
+                  </defs>
+                  <text x="100" y="95" text-anchor="middle" font-size="48" font-weight="700" fill="#fff" id="cg-health-value">0</text>
+                  <text x="100" y="115" text-anchor="middle" font-size="14" fill="#94A3B8">Health Score</text>
+                </svg>
+                <div class="cg-health-status" id="cg-health-status">Analyzing...</div>
+              </div>
+              
+              <div class="cg-health-metrics">
+                <div class="cg-health-metric">
+                  <div class="cg-metric-icon">🎯</div>
+                  <div class="cg-metric-info">
+                    <div class="cg-metric-label">Toxicity Rate</div>
+                    <div class="cg-metric-value" id="cg-metric-toxicity">0%</div>
+                  </div>
+                </div>
+                <div class="cg-health-metric">
+                  <div class="cg-metric-icon">👥</div>
+                  <div class="cg-metric-info">
+                    <div class="cg-metric-label">User Engagement</div>
+                    <div class="cg-metric-value" id="cg-metric-engagement">0%</div>
+                  </div>
+                </div>
+                <div class="cg-health-metric">
+                  <div class="cg-metric-icon">😊</div>
+                  <div class="cg-metric-info">
+                    <div class="cg-metric-label">Sentiment Balance</div>
+                    <div class="cg-metric-value" id="cg-metric-sentiment">0%</div>
+                  </div>
+                </div>
+                <div class="cg-health-metric">
+                  <div class="cg-metric-icon">🛡️</div>
+                  <div class="cg-metric-info">
+                    <div class="cg-metric-label">Moderation Effectiveness</div>
+                    <div class="cg-metric-value" id="cg-metric-moderation">0%</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cg-health-trend">
+                <div class="cg-trend-label">Trend</div>
+                <div class="cg-trend-indicator" id="cg-trend-indicator">
+                  <span class="cg-trend-arrow">→</span>
+                  <span class="cg-trend-text">Stable</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Comments Tab -->
           <div class="cg-tab-content" id="tab-comments">
             <div class="cg-comment-filter">
@@ -270,6 +343,42 @@
               <button class="cg-filter-btn" data-filter="safe">🟢 Safe</button>
             </div>
             <div class="cg-comment-list" id="cg-comment-list">
+              <div class="cg-empty">Click refresh to analyze comments</div>
+            </div>
+          </div>
+
+          <!-- Batch Moderation Tab -->
+          <div class="cg-tab-content" id="tab-batch">
+            <div class="cg-batch-header">
+              <div class="cg-batch-title">Batch Moderation Mode</div>
+              <div class="cg-batch-actions">
+                <button class="cg-batch-btn" id="cg-select-all-toxic">Select All Toxic</button>
+                <button class="cg-batch-btn" id="cg-select-all">Select All</button>
+                <button class="cg-batch-btn" id="cg-deselect-all">Deselect All</button>
+              </div>
+            </div>
+            <div class="cg-batch-selected">
+              <span id="cg-batch-count">0</span> comments selected
+            </div>
+            <div class="cg-batch-operations">
+              <button class="cg-batch-op-btn cg-batch-hide" id="cg-batch-hide-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46A11.804 11.804 0 001 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                Hide Selected
+              </button>
+              <button class="cg-batch-op-btn cg-batch-block" id="cg-batch-block-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z"/></svg>
+                Block Users
+              </button>
+              <button class="cg-batch-op-btn cg-batch-approve" id="cg-batch-approve-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                Approve Selected
+              </button>
+              <button class="cg-batch-op-btn cg-batch-export" id="cg-batch-export-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/></svg>
+                Export Selected
+              </button>
+            </div>
+            <div class="cg-batch-list" id="cg-batch-list">
               <div class="cg-empty">Click refresh to analyze comments</div>
             </div>
           </div>
@@ -306,6 +415,10 @@
                 <label class="cg-setting-item">
                   <input type="checkbox" id="cg-track-history" checked />
                   <span>Track toxicity trends over time</span>
+                </label>
+                <label class="cg-setting-item">
+                  <input type="checkbox" id="cg-detect-sarcasm" checked />
+                  <span>AI Context Analysis (detect sarcasm & jokes)</span>
                 </label>
               </div>
               
@@ -412,8 +525,27 @@
       analyzeAndRender();
     });
 
-    // Export button
-    panel.querySelector('#cg-export-btn').addEventListener('click', exportReport);
+    // Export button - show menu
+    panel.querySelector('#cg-export-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = document.getElementById('cg-export-menu');
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Export menu options
+    document.addEventListener('click', () => {
+      const menu = document.getElementById('cg-export-menu');
+      if (menu) menu.style.display = 'none';
+    });
+
+    panel.querySelectorAll('.cg-export-option').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const format = btn.dataset.format;
+        exportReport(format);
+        document.getElementById('cg-export-menu').style.display = 'none';
+      });
+    });
 
     // Settings button
     panel.querySelector('#cg-settings-btn').addEventListener('click', () => {
@@ -488,6 +620,21 @@
       saveSettings();
     });
 
+    // Settings: Detect sarcasm checkbox
+    panel.querySelector('#cg-detect-sarcasm').addEventListener('change', (e) => {
+      state.settings.detectSarcasm = e.target.checked;
+      saveSettings();
+    });
+
+    // Batch mode handlers
+    panel.querySelector('#cg-select-all-toxic')?.addEventListener('click', selectAllToxic);
+    panel.querySelector('#cg-select-all')?.addEventListener('click', selectAll);
+    panel.querySelector('#cg-deselect-all')?.addEventListener('click', deselectAll);
+    panel.querySelector('#cg-batch-hide-btn')?.addEventListener('click', batchHide);
+    panel.querySelector('#cg-batch-block-btn')?.addEventListener('click', batchBlock);
+    panel.querySelector('#cg-batch-approve-btn')?.addEventListener('click', batchApprove);
+    panel.querySelector('#cg-batch-export-btn')?.addEventListener('click', () => exportReport('csv', true));
+
     // Settings: Custom keywords
     panel.querySelector('#cg-keywords-save').addEventListener('click', () => {
       const input = panel.querySelector('#cg-keywords-input');
@@ -522,6 +669,7 @@
     panel.querySelector('#cg-show-heatmap').checked = state.settings.showHeatmap !== false;
     panel.querySelector('#cg-reply-suggestions').checked = state.settings.showReplySuggestions !== false;
     panel.querySelector('#cg-track-history').checked = state.settings.trackHistory !== false;
+    panel.querySelector('#cg-detect-sarcasm').checked = state.settings.detectSarcasm !== false;
     panel.querySelector('#cg-threshold').value = state.settings.toxicityThreshold * 100;
     panel.querySelector('#cg-threshold-display').textContent = Math.round(state.settings.toxicityThreshold * 100);
     renderKeywordsList(panel);
@@ -546,8 +694,14 @@
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
 
+    // Check if backend is online
+    if (!state.backendOnline) {
+      showBackendRequiredMessage(panel);
+      return;
+    }
+
     // Update platform label
-    panel.querySelector('#cg-platform-label').textContent = `Analyzing ${state.platform.name}...`;
+    panel.querySelector('#cg-platform-label').textContent = `Analyzing ${state.platform.name} with BERT ML...`;
 
     // Scrape comments
     const comments = state.platform.scrapeComments();
@@ -567,10 +721,19 @@
     const authorStats = new Map();
     const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
 
-    // Analyze comments one by one in real-time
+    // Analyze comments one by one in real-time using BERT
     for (const comment of comments) {
-      // Analyze this comment
-      const analyzed = analyzeCommentClientSide(comment);
+      // Try BERT first, fallback to client-side if needed
+      let analyzed;
+      try {
+        analyzed = await analyzeCommentWithBERT(comment);
+        analyzed.usedML = true; // Mark as ML-analyzed
+      } catch (error) {
+        console.warn('[ContentGuard] BERT analysis failed, using client-side:', error);
+        analyzed = analyzeCommentClientSide(comment);
+        analyzed.usedML = false;
+      }
+      
       analyzedComments.push(analyzed);
       totalAnalyzed++;
       
@@ -621,6 +784,10 @@
       }
     };
 
+    // Calculate and render community health
+    state.communityHealth = calculateCommunityHealth(analyzedComments, state.results.stats);
+    renderCommunityHealth(panel, state.communityHealth);
+
     // Save to history
     saveToHistory(state.results.stats);
 
@@ -632,6 +799,9 @@
     renderHeatmap(panel, analyzedComments);
     renderTrendChart(panel);
     renderReputationList(panel, userStats);
+
+    // Render batch moderation list
+    renderBatchList(panel, analyzedComments);
 
     // Generate and render AI insights
     const insights = generateAIInsights(analyzedComments);
@@ -714,6 +884,21 @@
     
     toxicScore = Math.min(toxicScore, 0.99);
     
+    // AI Context Analysis - Sarcasm Detection
+    let isSarcasm = false;
+    let contextNote = '';
+    if (state.settings.detectSarcasm && toxicScore > 0.3) {
+      const sarcasmResult = detectSarcasm(comment.text, toxicScore);
+      isSarcasm = sarcasmResult.isSarcasm;
+      contextNote = sarcasmResult.note;
+      
+      // Reduce toxicity score if sarcasm detected
+      if (isSarcasm) {
+        toxicScore = toxicScore * 0.4; // Reduce by 60%
+        console.log('[ContentGuard] Sarcasm detected, reduced score:', toxicScore);
+      }
+    }
+    
     // Use threshold from settings (default 0.5 instead of 0.7)
     const threshold = state.settings.toxicityThreshold || 0.5;
     const isToxic = toxicScore >= threshold;
@@ -758,7 +943,9 @@
       confidence: toxicScore,
       primary_label: isToxic ? 'toxic' : 'none',
       sentiment: sentiment,
-      matchedKeywords: matchedKeywords // For debugging
+      matchedKeywords: matchedKeywords, // For debugging
+      isSarcasm: isSarcasm,
+      contextNote: contextNote
     };
   }
 
@@ -782,6 +969,480 @@
     if (positiveCount > negativeCount) return 'positive';
     if (negativeCount > positiveCount) return 'negative';
     return 'neutral';
+  }
+
+  // ── Sarcasm Detection (AI Context Analysis) ─────────────────────────────────
+  function detectSarcasm(text, toxicScore) {
+    const lowerText = text.toLowerCase();
+    let sarcasmScore = 0;
+    const indicators = [];
+    
+    // Sarcasm indicators
+    const sarcasmMarkers = [
+      { pattern: /\blol\b|\blmao\b|\bhaha\b|\blmfao\b/i, weight: 0.3, label: 'laughter' },
+      { pattern: /\bjk\b|\bjust kidding\b|\bkidding\b/i, weight: 0.5, label: 'explicit joke' },
+      { pattern: /\/s\b|\bsarcasm\b/i, weight: 0.9, label: 'sarcasm tag' },
+      { pattern: /😂|🤣|😅|😆/g, weight: 0.25, label: 'laughing emoji' },
+      { pattern: /\byeah right\b|\bsure\b.*\b(buddy|pal|friend)\b/i, weight: 0.4, label: 'sarcastic phrase' },
+      { pattern: /\boh (really|wow|great)\b/i, weight: 0.3, label: 'sarcastic exclamation' },
+      { pattern: /"[^"]+"/g, weight: 0.2, label: 'air quotes' },
+      { pattern: /\.\.\./g, weight: 0.15, label: 'ellipsis' }
+    ];
+    
+    sarcasmMarkers.forEach(marker => {
+      const matches = text.match(marker.pattern);
+      if (matches) {
+        sarcasmScore += marker.weight * matches.length;
+        indicators.push(marker.label);
+      }
+    });
+    
+    // Context clues: positive words + toxic words = likely sarcasm
+    const positiveWords = ['great', 'wonderful', 'amazing', 'perfect', 'excellent', 'brilliant'];
+    const hasPositive = positiveWords.some(word => lowerText.includes(word));
+    if (hasPositive && toxicScore > 0.5) {
+      sarcasmScore += 0.3;
+      indicators.push('positive + toxic mix');
+    }
+    
+    // Exaggeration patterns
+    if (text.match(/!{2,}/)) {
+      sarcasmScore += 0.1;
+      indicators.push('excessive punctuation');
+    }
+    
+    const isSarcasm = sarcasmScore >= 0.5;
+    const note = isSarcasm ? `Likely sarcasm/joke (${indicators.join(', ')})` : '';
+    
+    return { isSarcasm, sarcasmScore, note };
+  }
+
+  // ── BERT ML Analysis ────────────────────────────────────────────────────────
+  async function analyzeCommentWithBERT(comment) {
+    try {
+      const response = await sendMessage({
+        type: 'ANALYZE_COMMENT',
+        comment: comment
+      });
+
+      if (!response || !response.success) {
+        throw new Error('BERT analysis failed');
+      }
+
+      const result = response.result;
+      
+      // Apply sarcasm detection on top of BERT results
+      let toxicScore = result.predictions?.toxic || 0;
+      let isSarcasm = false;
+      let contextNote = '';
+      
+      if (state.settings.detectSarcasm && toxicScore > 0.3) {
+        const sarcasmResult = detectSarcasm(comment.text, toxicScore);
+        isSarcasm = sarcasmResult.isSarcasm;
+        contextNote = sarcasmResult.note;
+        
+        // Reduce toxicity score if sarcasm detected
+        if (isSarcasm) {
+          toxicScore = toxicScore * 0.4; // Reduce by 60%
+          console.log('[ContentGuard] BERT + Sarcasm: reduced score from', result.predictions.toxic, 'to', toxicScore);
+        }
+      }
+
+      // Determine severity and action based on adjusted score
+      let action = 'ALLOW';
+      let severity = 'NONE';
+      
+      if (toxicScore >= 0.8) {
+        action = 'BLOCK';
+        severity = 'CRITICAL';
+      } else if (toxicScore >= 0.6) {
+        action = 'HIDE';
+        severity = 'HIGH';
+      } else if (toxicScore >= state.settings.toxicityThreshold) {
+        action = 'WARNING';
+        severity = 'MEDIUM';
+      } else if (toxicScore >= 0.3) {
+        action = 'WARNING';
+        severity = 'LOW';
+      }
+
+      return {
+        ...comment,
+        is_toxic: toxicScore >= state.settings.toxicityThreshold,
+        predictions: { toxic: toxicScore },
+        action: action,
+        severity: severity,
+        confidence: result.confidence || toxicScore,
+        primary_label: result.primary_label || (toxicScore >= state.settings.toxicityThreshold ? 'toxic' : 'none'),
+        sentiment: analyzeSentiment(comment.text),
+        isSarcasm: isSarcasm,
+        contextNote: contextNote,
+        usedML: true,
+        modelName: 'BERT',
+        modelAccuracy: 92.8
+      };
+    } catch (error) {
+      console.error('[ContentGuard] BERT analysis error:', error);
+      throw error;
+    }
+  }
+
+  // ── Backend Required Message ────────────────────────────────────────────────
+  function showBackendRequiredMessage(panel) {
+    panel.querySelector('#cg-platform-label').textContent = 'Backend Required';
+    
+    const content = panel.querySelector('#cg-content');
+    if (!content) return;
+    
+    // Hide tabs
+    const tabs = panel.querySelector('.cg-tabs');
+    if (tabs) tabs.style.display = 'none';
+    
+    // Show message in all tab contents
+    const tabContents = panel.querySelectorAll('.cg-tab-content');
+    tabContents.forEach(tab => {
+      tab.innerHTML = `
+        <div class="cg-backend-required">
+          <div class="cg-ml-icon">🤖</div>
+          <div class="cg-ml-title">BERT ML Model Required</div>
+          <div class="cg-ml-subtitle">ContentGuard uses a trained BERT transformer model for accurate toxicity detection</div>
+          
+          <div class="cg-ml-stats">
+            <div class="cg-ml-stat">
+              <div class="cg-ml-stat-value">92.8%</div>
+              <div class="cg-ml-stat-label">Model Accuracy</div>
+            </div>
+            <div class="cg-ml-stat">
+              <div class="cg-ml-stat-value">10K</div>
+              <div class="cg-ml-stat-label">Training Samples</div>
+            </div>
+            <div class="cg-ml-stat">
+              <div class="cg-ml-stat-value">BERT</div>
+              <div class="cg-ml-stat-label">Transformer Model</div>
+            </div>
+          </div>
+
+          <div class="cg-ml-instructions">
+            <div class="cg-ml-step">
+              <div class="cg-ml-step-number">1</div>
+              <div class="cg-ml-step-text">
+                <strong>Open Terminal</strong>
+                <code>cd c:\\Users\\AMISHA\\Desktop\\Codes\\content-moderation-system-main</code>
+              </div>
+            </div>
+            <div class="cg-ml-step">
+              <div class="cg-ml-step-number">2</div>
+              <div class="cg-ml-step-text">
+                <strong>Start Backend</strong>
+                <code>python -m uvicorn api.main:app --reload</code>
+              </div>
+            </div>
+            <div class="cg-ml-step">
+              <div class="cg-ml-step-number">3</div>
+              <div class="cg-ml-step-text">
+                <strong>Wait for BERT to Load</strong>
+                <span>Backend will start at http://localhost:8000</span>
+              </div>
+            </div>
+            <div class="cg-ml-step">
+              <div class="cg-ml-step-number">4</div>
+              <div class="cg-ml-step-text">
+                <strong>Refresh This Page</strong>
+                <span>The status dot will turn green when ready</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="cg-ml-features">
+            <div class="cg-ml-feature">✅ Deep learning-based detection</div>
+            <div class="cg-ml-feature">✅ Context-aware analysis</div>
+            <div class="cg-ml-feature">✅ Multi-label classification</div>
+            <div class="cg-ml-feature">✅ Trained on Jigsaw dataset</div>
+          </div>
+
+          <button class="cg-ml-retry" onclick="location.reload()">
+            🔄 Check Backend Status
+          </button>
+        </div>
+      `;
+    });
+  }
+
+  // ── Community Health Calculator ─────────────────────────────────────────────
+  function calculateCommunityHealth(comments, stats) {
+    // Health score components (0-100 each)
+    const toxicityRate = 100 - stats.toxicPercent; // Lower toxicity = better
+    
+    // User engagement (based on comment length and variety)
+    const avgLength = comments.reduce((sum, c) => sum + c.text.length, 0) / comments.length;
+    const engagement = Math.min(100, (avgLength / 200) * 100); // 200 chars = 100%
+    
+    // Sentiment balance (more positive = better)
+    const positivePercent = (stats.sentimentCounts.positive / stats.total) * 100;
+    const sentimentBalance = Math.min(100, positivePercent * 1.5);
+    
+    // Moderation effectiveness (based on action distribution)
+    const allowedPercent = (comments.filter(c => c.action === 'ALLOW').length / comments.length) * 100;
+    const moderation = allowedPercent; // Higher allowed = better moderation
+    
+    // Overall health score (weighted average)
+    const healthScore = Math.round(
+      toxicityRate * 0.4 +
+      engagement * 0.2 +
+      sentimentBalance * 0.2 +
+      moderation * 0.2
+    );
+    
+    // Determine status
+    let status = '';
+    let statusColor = '';
+    if (healthScore >= 80) {
+      status = '🎉 Excellent - Very healthy community!';
+      statusColor = 'var(--cg-green)';
+    } else if (healthScore >= 60) {
+      status = '✅ Good - Community is doing well';
+      statusColor = 'var(--cg-cyan)';
+    } else if (healthScore >= 40) {
+      status = '⚠️ Fair - Needs attention';
+      statusColor = 'var(--cg-yellow)';
+    } else if (healthScore >= 20) {
+      status = '🔴 Poor - Requires moderation';
+      statusColor = 'var(--cg-orange)';
+    } else {
+      status = '🚨 Critical - Immediate action needed';
+      statusColor = 'var(--cg-red)';
+    }
+    
+    // Calculate trend
+    const history = loadHistory();
+    let trend = 'stable';
+    let trendArrow = '→';
+    if (history.length >= 2) {
+      const prev = history[history.length - 2];
+      const current = stats.toxicPercent;
+      const diff = prev.toxicPercent - current; // Positive diff = improving
+      
+      if (diff > 10) {
+        trend = 'improving';
+        trendArrow = '↗️';
+      } else if (diff < -10) {
+        trend = 'declining';
+        trendArrow = '↘️';
+      }
+    }
+    
+    return {
+      healthScore,
+      status,
+      statusColor,
+      metrics: {
+        toxicityRate: Math.round(toxicityRate),
+        engagement: Math.round(engagement),
+        sentimentBalance: Math.round(sentimentBalance),
+        moderation: Math.round(moderation)
+      },
+      trend,
+      trendArrow
+    };
+  }
+
+  function renderCommunityHealth(panel, health) {
+    if (!health) return;
+    
+    // Update gauge
+    const circle = panel.querySelector('#cg-health-circle');
+    const value = panel.querySelector('#cg-health-value');
+    const status = panel.querySelector('#cg-health-status');
+    
+    if (circle && value && status) {
+      const circumference = 502.4;
+      const offset = circumference - (health.healthScore / 100) * circumference;
+      
+      circle.style.strokeDashoffset = offset;
+      value.textContent = health.healthScore;
+      status.textContent = health.status;
+      status.style.color = health.statusColor;
+      
+      // Update gradient based on score
+      const gradient = circle.ownerSVGElement.querySelector('#healthGradient');
+      if (gradient) {
+        const stops = gradient.querySelectorAll('stop');
+        if (health.healthScore >= 70) {
+          stops[0].style.stopColor = '#10B981';
+          stops[1].style.stopColor = '#06B6D4';
+        } else if (health.healthScore >= 40) {
+          stops[0].style.stopColor = '#F59E0B';
+          stops[1].style.stopColor = '#F97316';
+        } else {
+          stops[0].style.stopColor = '#EF4444';
+          stops[1].style.stopColor = '#B91C1C';
+        }
+      }
+    }
+    
+    // Update metrics
+    panel.querySelector('#cg-metric-toxicity').textContent = health.metrics.toxicityRate + '%';
+    panel.querySelector('#cg-metric-engagement').textContent = health.metrics.engagement + '%';
+    panel.querySelector('#cg-metric-sentiment').textContent = health.metrics.sentimentBalance + '%';
+    panel.querySelector('#cg-metric-moderation').textContent = health.metrics.moderation + '%';
+    
+    // Update trend
+    const trendIndicator = panel.querySelector('#cg-trend-indicator');
+    if (trendIndicator) {
+      trendIndicator.innerHTML = `
+        <span class="cg-trend-arrow">${health.trendArrow}</span>
+        <span class="cg-trend-text">${health.trend.charAt(0).toUpperCase() + health.trend.slice(1)}</span>
+      `;
+      
+      if (health.trend === 'improving') {
+        trendIndicator.style.color = 'var(--cg-green)';
+      } else if (health.trend === 'declining') {
+        trendIndicator.style.color = 'var(--cg-red)';
+      } else {
+        trendIndicator.style.color = 'var(--cg-text-muted)';
+      }
+    }
+  }
+
+  // ── Batch Moderation Functions ──────────────────────────────────────────────
+  function selectAllToxic() {
+    if (!state.results) return;
+    state.selectedComments.clear();
+    state.results.comments.forEach(c => {
+      if (c.is_toxic) state.selectedComments.add(c.id || c.text);
+    });
+    updateBatchUI();
+  }
+
+  function selectAll() {
+    if (!state.results) return;
+    state.selectedComments.clear();
+    state.results.comments.forEach(c => {
+      state.selectedComments.add(c.id || c.text);
+    });
+    updateBatchUI();
+  }
+
+  function deselectAll() {
+    state.selectedComments.clear();
+    updateBatchUI();
+  }
+
+  function batchHide() {
+    if (state.selectedComments.size === 0) {
+      alert('No comments selected');
+      return;
+    }
+    
+    const count = state.selectedComments.size;
+    if (confirm(`Hide ${count} selected comment${count > 1 ? 's' : ''}?`)) {
+      // Apply hide to selected comments
+      state.results.comments.forEach(c => {
+        if (state.selectedComments.has(c.id || c.text)) {
+          const elements = findCommentElements(c.text);
+          elements.forEach(el => {
+            el.style.opacity = '0.3';
+            el.style.filter = 'blur(5px)';
+          });
+        }
+      });
+      
+      alert(`${count} comment${count > 1 ? 's' : ''} hidden`);
+      deselectAll();
+    }
+  }
+
+  function batchBlock() {
+    if (state.selectedComments.size === 0) {
+      alert('No comments selected');
+      return;
+    }
+    
+    const users = new Set();
+    state.results.comments.forEach(c => {
+      if (state.selectedComments.has(c.id || c.text)) {
+        users.add(c.author);
+      }
+    });
+    
+    const count = users.size;
+    if (confirm(`Block ${count} user${count > 1 ? 's' : ''}?`)) {
+      alert(`${count} user${count > 1 ? 's' : ''} blocked (feature demo)`);
+      deselectAll();
+    }
+  }
+
+  function batchApprove() {
+    if (state.selectedComments.size === 0) {
+      alert('No comments selected');
+      return;
+    }
+    
+    const count = state.selectedComments.size;
+    if (confirm(`Approve ${count} selected comment${count > 1 ? 's' : ''}?`)) {
+      alert(`${count} comment${count > 1 ? 's' : ''} approved`);
+      deselectAll();
+    }
+  }
+
+  function updateBatchUI() {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return;
+    
+    const countEl = panel.querySelector('#cg-batch-count');
+    if (countEl) {
+      countEl.textContent = state.selectedComments.size;
+    }
+    
+    // Update checkboxes
+    panel.querySelectorAll('.cg-batch-checkbox').forEach(checkbox => {
+      const commentId = checkbox.dataset.commentId;
+      checkbox.checked = state.selectedComments.has(commentId);
+    });
+  }
+
+  function renderBatchList(panel, comments) {
+    const list = panel.querySelector('#cg-batch-list');
+    if (!list) return;
+    
+    if (!comments || comments.length === 0) {
+      list.innerHTML = '<div class="cg-empty">No comments to display</div>';
+      return;
+    }
+    
+    list.innerHTML = comments.map(c => {
+      const commentId = c.id || c.text;
+      const isSelected = state.selectedComments.has(commentId);
+      
+      return `
+        <div class="cg-batch-item ${c.is_toxic ? 'cg-batch-toxic' : ''}">
+          <input type="checkbox" class="cg-batch-checkbox" data-comment-id="${escapeHTML(commentId)}" ${isSelected ? 'checked' : ''} />
+          <div class="cg-batch-content">
+            <div class="cg-batch-author">${escapeHTML(c.author)}</div>
+            <div class="cg-batch-text">${escapeHTML(c.text.substring(0, 100))}${c.text.length > 100 ? '...' : ''}</div>
+            <div class="cg-batch-meta">
+              <span class="cg-batch-score" style="color: ${c.is_toxic ? 'var(--cg-red)' : 'var(--cg-green)'};">
+                ${Math.round(c.confidence * 100)}% ${c.is_toxic ? 'toxic' : 'safe'}
+              </span>
+              ${c.isSarcasm ? '<span class="cg-sarcasm-badge">😏 Sarcasm</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // Bind checkbox events
+    list.querySelectorAll('.cg-batch-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const commentId = checkbox.dataset.commentId;
+        if (e.target.checked) {
+          state.selectedComments.add(commentId);
+        } else {
+          state.selectedComments.delete(commentId);
+        }
+        updateBatchUI();
+      });
+    });
   }
 
   // ── Settings Persistence ────────────────────────────────────────────────────
@@ -854,24 +1515,50 @@
   }
 
   // ── Export Report ───────────────────────────────────────────────────────────
-  function exportReport() {
+  function exportReport(format = 'csv', selectedOnly = false) {
     if (!state.results || !state.results.comments) {
       alert('No data to export. Please analyze comments first.');
       return;
     }
 
-    const csv = generateCSV(state.results.comments);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const comments = selectedOnly 
+      ? state.results.comments.filter(c => state.selectedComments.has(c.id || c.text))
+      : state.results.comments;
+
+    if (comments.length === 0) {
+      alert('No comments to export.');
+      return;
+    }
+
+    let content, mimeType, extension;
+
+    switch (format) {
+      case 'json':
+        content = generateJSON(comments);
+        mimeType = 'application/json';
+        extension = 'json';
+        break;
+      case 'pdf':
+        generatePDF(comments);
+        return; // PDF generation handles download internally
+      case 'csv':
+      default:
+        content = generateCSV(comments);
+        mimeType = 'text/csv;charset=utf-8;';
+        extension = 'csv';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `contentguard-report-${Date.now()}.csv`;
+    link.download = `contentguard-report-${Date.now()}.${extension}`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
   function generateCSV(comments) {
-    const headers = ['Author', 'Text', 'Is Toxic', 'Toxicity Score', 'Action', 'Severity', 'Sentiment'];
+    const headers = ['Author', 'Text', 'Is Toxic', 'Toxicity Score', 'Action', 'Severity', 'Sentiment', 'Sarcasm', 'Context Note'];
     const rows = comments.map(c => [
       c.author || 'Unknown',
       c.text.replace(/"/g, '""'), // Escape quotes
@@ -879,7 +1566,9 @@
       (c.predictions?.toxic || 0).toFixed(3),
       c.action || 'ALLOW',
       c.severity || 'NONE',
-      c.sentiment || 'neutral'
+      c.sentiment || 'neutral',
+      c.isSarcasm ? 'Yes' : 'No',
+      c.contextNote || ''
     ]);
     
     const csvContent = [
@@ -888,6 +1577,116 @@
     ].join('\n');
     
     return csvContent;
+  }
+
+  function generateJSON(comments) {
+    const report = {
+      generated: new Date().toISOString(),
+      platform: state.platform.name,
+      url: location.href,
+      stats: state.results.stats,
+      communityHealth: state.communityHealth,
+      comments: comments.map(c => ({
+        author: c.author,
+        text: c.text,
+        isToxic: c.is_toxic,
+        toxicityScore: c.predictions?.toxic || 0,
+        action: c.action,
+        severity: c.severity,
+        sentiment: c.sentiment,
+        isSarcasm: c.isSarcasm,
+        contextNote: c.contextNote,
+        matchedKeywords: c.matchedKeywords
+      }))
+    };
+    
+    return JSON.stringify(report, null, 2);
+  }
+
+  function generatePDF(comments) {
+    // Simple PDF generation using HTML and print
+    const reportWindow = window.open('', '_blank');
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>ContentGuard Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #7C3AED; }
+          .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+          .stat-card { border: 2px solid #7C3AED; border-radius: 8px; padding: 15px; text-align: center; }
+          .stat-value { font-size: 32px; font-weight: bold; color: #7C3AED; }
+          .stat-label { font-size: 14px; color: #666; margin-top: 5px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+          th { background-color: #7C3AED; color: white; }
+          .toxic { background-color: #fee; }
+          .safe { background-color: #efe; }
+          @media print { button { display: none; } }
+        </style>
+      </head>
+      <body>
+        <h1>🛡️ ContentGuard Moderation Report</h1>
+        <p><strong>Platform:</strong> ${state.platform.name}</p>
+        <p><strong>URL:</strong> ${location.href}</p>
+        <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+        
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-value">${state.results.stats.total}</div>
+            <div class="stat-label">Total Comments</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${state.results.stats.toxicCount}</div>
+            <div class="stat-label">Toxic (${state.results.stats.toxicPercent}%)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${state.results.stats.safeCount}</div>
+            <div class="stat-label">Safe (${state.results.stats.safePercent}%)</div>
+          </div>
+        </div>
+
+        ${state.communityHealth ? `
+          <h2>Community Health Score: ${state.communityHealth.healthScore}/100</h2>
+          <p>${state.communityHealth.status}</p>
+        ` : ''}
+        
+        <h2>Comments Analysis</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Author</th>
+              <th>Comment</th>
+              <th>Toxic</th>
+              <th>Score</th>
+              <th>Action</th>
+              <th>Sentiment</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${comments.map(c => `
+              <tr class="${c.is_toxic ? 'toxic' : 'safe'}">
+                <td>${escapeHTML(c.author)}</td>
+                <td>${escapeHTML(c.text.substring(0, 100))}${c.text.length > 100 ? '...' : ''}</td>
+                <td>${c.is_toxic ? '🔴 Yes' : '🟢 No'}</td>
+                <td>${Math.round((c.predictions?.toxic || 0) * 100)}%</td>
+                <td>${c.action}</td>
+                <td>${c.sentiment}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <button onclick="window.print()" style="margin-top: 20px; padding: 10px 20px; background: #7C3AED; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px;">
+          Print / Save as PDF
+        </button>
+      </body>
+      </html>
+    `;
+    
+    reportWindow.document.write(html);
+    reportWindow.document.close();
   }
 
   // ── Auto-Hide Toxic Comments ────────────────────────────────────────────────
@@ -1511,6 +2310,16 @@
     const confidence = Math.round((c.confidence || 0) * 100);
     const sentimentEmoji = { positive: '😊', negative: '😠', neutral: '😐' }[c.sentiment] || '😐';
 
+    // ML Badge
+    const mlBadge = c.usedML 
+      ? `<span class="cg-ml-badge" title="Analyzed by BERT ML Model (92.8% accuracy)">🤖 BERT</span>`
+      : `<span class="cg-rules-badge" title="Analyzed by rule-based detection">📋 Rules</span>`;
+
+    // Sarcasm Badge
+    const sarcasmBadge = c.isSarcasm 
+      ? `<span class="cg-sarcasm-badge" title="${escapeHTML(c.contextNote || 'Sarcasm detected')}">😏 Sarcasm</span>`
+      : '';
+
     // Generate reply suggestion if toxic
     let replySuggestion = '';
     if (c.is_toxic && state.settings.showReplySuggestions) {
@@ -1551,6 +2360,10 @@
           </div>
         </div>
         <div class="cg-comment__text">${safeText}</div>
+        <div class="cg-comment__badges">
+          ${mlBadge}
+          ${sarcasmBadge}
+        </div>
         ${explanation}
         ${replySuggestion}
       </div>
